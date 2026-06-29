@@ -240,24 +240,23 @@ def detect_video():
 
     cap = cv2.VideoCapture(temp.name)
 
-    last_frame = None
+   frame_count = 0
 
-    results = []
+while True:
 
-    total = 0
-    empty = 0
-    occupied = 0
+    ret, frame = cap.read()
 
-    while True:
+    if not ret:
+        break
 
-        ret, frame = cap.read()
+    frame_count += 1
 
-        if not ret:
-            break
+    if frame_count % 5 != 0:
+        continue
 
-        frame, results, total, empty, occupied = detect_frame(frame)
+    frame, results, total, empty, occupied = detect_frame(frame)
 
-        last_frame = frame.copy()
+    last_frame = frame.copy()
 
     cap.release()
 
