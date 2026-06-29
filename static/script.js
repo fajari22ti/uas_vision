@@ -1,92 +1,340 @@
-async function uploadImage() {
+// =============================
+// SMART PARKING DETECTION
+// Rizki Fajari
+// =============================
 
-    const input = document.getElementById("imageInput");
+const preview = document.getElementById("preview");
 
-    if (input.files.length === 0) {
+const imageInput = document.getElementById("imageInput");
+const videoInput = document.getElementById("videoInput");
 
-        alert("Pilih gambar terlebih dahulu.");
+const btnImage = document.getElementById("btnImage");
+const btnVideo = document.getElementById("btnVideo");
+const btnCamera = document.getElementById("btnCamera");
+const btnStop = document.getElementById("btnStop");
 
-        return;
+const loading = document.getElementById("loadingOverlay");
 
-    }
+const totalSlot = document.getElementById("totalSlot");
+const emptySlot = document.getElementById("emptySlot");
+const occupiedSlot = document.getElementById("occupiedSlot");
+const fpsText = document.getElementById("fps");
 
-    const formData = new FormData();
+const tableBody = document.getElementById("resultTable");
 
-    formData.append("image", input.files[0]);
+let stream = null;
+let cameraRunning = false;
 
-    try {
+//==============================
+// Loading
+//==============================
 
-        const response = await fetch("/detect/image", {
+function showLoading(){
 
-            method: "POST",
-
-            body: formData
-
-        });
-
-        const data = await response.json();
-
-        if (!data.success) {
-
-            alert(data.message);
-
-            return;
-
-        }
-
-        // tampilkan gambar hasil deteksi
-
-        document.getElementById("resultImage").src =
-            "data:image/jpeg;base64," + data.image;
-
-        // statistik
-
-        document.getElementById("available").innerHTML =
-            data.available;
-
-        document.getElementById("occupied").innerHTML =
-            data.occupied;
-
-        document.getElementById("total").innerHTML =
-            data.total;
-
-        // tabel
-
-        let tbody = document.getElementById("resultTable");
-
-        tbody.innerHTML = "";
-
-        data.results.forEach((item, index) => {
-
-            let color =
-                item.status === "Empty"
-                ? "table-success"
-                : "table-danger";
-
-            tbody.innerHTML += `
-
-            <tr class="${color}">
-
-                <td>${index+1}</td>
-
-                <td>${item.status}</td>
-
-                <td>${item.confidence}%</td>
-
-            </tr>
-
-            `;
-
-        });
-
-    }
-
-    catch(error){
-
-        console.log(error);
-
-        alert("Server Error");
-
-    }
+loading.style.display="flex";
 
 }
+
+function hideLoading(){
+
+loading.style.display="none";
+
+}
+
+//==============================
+// Update Statistics
+//==============================
+
+function updateStatistic(data){
+
+totalSlot.innerHTML=data.total;
+
+emptySlot.innerHTML=data.n_tersedia;
+
+occupiedSlot.innerHTML=data.n_penuh;
+
+}
+
+//==============================
+// Update Table
+//==============================
+
+function updateTable(results){
+
+tableBody.innerHTML="";
+
+if(results.length===0){
+
+tableBody.innerHTML=
+`
+<tr>
+<td colspan="3" class="text-center">
+No Detection
+</td>
+</tr>
+`;
+
+return;
+
+}
+
+results.forEach(slot=>{
+
+let badge=
+slot.status==="Empty"
+?
+'<span class="badge-empty">Empty</span>'
+:
+'<span class="badge-occupied">Occupied</span>';
+
+tableBody.innerHTML+=
+`
+<tr>
+
+<td>${slot.slot_id}</td>
+
+<td>${badge}</td>
+
+<td>${slot.confidence}%</td>
+
+</tr>
+`;
+
+});
+
+}
+
+//==============================
+// Update Preview
+//==============================
+
+function updatePreview(image){
+
+preview.src="data:image/jpeg;base64,"+image;
+
+}
+
+//==============================
+// Upload Image
+//==============================
+
+btnImage.onclick=()=>{
+
+imageInput.click();
+
+};
+
+imageInput.onchange=()=>{
+
+let file=imageInput.files[0];
+
+if(!file)return;
+
+let formData=new FormData();
+
+formData.append("image",file);
+
+showLoading();
+
+fetch("/detect/image",{
+
+method:"POST",
+
+body:formData
+
+})
+
+.then(res=>res.json())
+
+.then(data=>{
+
+hideLoading();
+
+updatePreview(data.image_b64);
+
+updateStatistic(data);
+
+updateTable(data.results);
+
+})
+
+.catch(err=>{
+
+hideLoading();
+
+alert("Detection Failed");
+
+console.log(err);
+
+});
+
+};
+
+//==============================
+// Upload Video
+//==============================
+
+btnVideo.onclick=()=>{
+
+videoInput.click();
+
+};
+
+videoInput.onchange=()=>{
+
+let file=videoInput.files[0];
+
+if(!file)return;
+
+let formData=new FormData();
+
+formData.append("video",file);
+
+showLoading();
+
+fetch("/detect/video",{
+
+method:"POST",
+
+body:formData
+
+})
+
+.then(res=>res.json())
+
+.then(data=>{
+
+hideLoading();
+
+updatePreview(data.image_b64);
+
+updateStatistic(data);
+
+updateTable(data.results);
+
+})
+
+.catch(err=>{
+
+hideLoading();
+
+console.log(err);
+
+alert("Video Error");
+
+});
+
+};
+
+//==============================
+// Live Camera
+//==============================
+
+btnCamera.onclick=async()=>{
+
+if(cameraRunning)return;
+
+cameraRunning=true;
+
+stream=await navigator.mediaDevices.getUserMedia({
+
+video:true
+
+});
+
+const video=document.createElement("video");
+
+video.srcObject=stream;
+
+await video.play();
+
+const canvas=document.createElement("canvas");
+
+const ctx=canvas.getContext("2d");
+
+async function detect(){
+
+if(!cameraRunning)return;
+
+canvas.width=video.videoWidth;
+
+canvas.height=video.videoHeight;
+
+ctx.drawImage(video,0,0);
+
+let frame=canvas.toDataURL("image/jpeg");
+
+let start=performance.now();
+
+fetch("/detect/frame",{
+
+method:"POST",
+
+headers:{
+
+"Content-Type":"application/json"
+
+},
+
+body:JSON.stringify({
+
+frame:frame
+
+})
+
+})
+
+.then(res=>res.json())
+
+.then(data=>{
+
+updatePreview(data.image_b64);
+
+updateStatistic(data);
+
+updateTable(data.results);
+
+let end=performance.now();
+
+fpsText.innerHTML=Math.round(1000/(end-start));
+
+if(cameraRunning){
+
+requestAnimationFrame(detect);
+
+}
+
+});
+
+}
+
+detect();
+
+};
+
+//==============================
+// Stop Camera
+//==============================
+
+btnStop.onclick=()=>{
+
+cameraRunning=false;
+
+if(stream){
+
+stream.getTracks().forEach(track=>track.stop());
+
+}
+
+preview.src="https://placehold.co/900x520/1e293b/ffffff?text=Detection+Stopped";
+
+};
+
+//==============================
+// Initial
+//==============================
+
+totalSlot.innerHTML=0;
+emptySlot.innerHTML=0;
+occupiedSlot.innerHTML=0;
+fpsText.innerHTML=0;
