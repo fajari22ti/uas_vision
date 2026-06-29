@@ -1,59 +1,29 @@
-"""
-==========================================================
-SISTEM MONITORING KETERSEDIAAN SLOT PARKIR OTOMATIS
-YOLOv8 / YOLO11 - Flask Backend
-Author : Rizki Fajari
-==========================================================
-"""
-
-import os
-import cv2
-import base64
-import numpy as np
-
-from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
-
+from flask import Flask, render_template, request, jsonify
 from ultralytics import YOLO
 
-# =====================================================
-# Flask
-# =====================================================
+import cv2
+import numpy as np
+import base64
+import tempfile
+import os
 
 app = Flask(__name__)
-CORS(app)
 
-# =====================================================
-# Load Model
-# =====================================================
+# ===========================
+# Load YOLO Model
+# ===========================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-MODEL_PATH = os.path.join(BASE_DIR, "best.pt")
-
-if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(
-        f"Model tidak ditemukan : {MODEL_PATH}"
-    )
+MODEL_PATH = "best.pt"
 
 model = YOLO(MODEL_PATH)
 
-print("===================================")
-print("YOLO MODEL LOADED")
-print(MODEL_PATH)
-print(model.names)
-print("===================================")
+CLASS_NAMES = model.names
 
-# =====================================================
-# Class Name
-# =====================================================
+print("Model Loaded Successfully")
 
-CLASS_EMPTY = 0
-CLASS_OCCUPIED = 1
-
-# =====================================================
-# Utility
-# =====================================================
+# ===========================
+# Helper
+# ===========================
 
 def image_to_base64(img):
 
@@ -62,309 +32,260 @@ def image_to_base64(img):
     return base64.b64encode(buffer).decode("utf-8")
 
 
-def decode_base64_image(data):
+def detect_frame(frame):
 
-    if "," in data:
-        data = data.split(",")[1]
+    results = model.predict(
 
-    img_bytes = base64.b64decode(data)
-
-    img_array = np.frombuffer(img_bytes, np.uint8)
-
-    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-
-    return img
-
-
-# =====================================================
-# Prediction
-# =====================================================
-
-def predict_image(image):
-
-    prediction = model.predict(
-
-        source=image,
+        frame,
 
         imgsz=640,
 
-        conf=0.25,
+        conf=0.35,
 
         verbose=False
 
-    )[0]
-
-    canvas = image.copy()
-
-    empty_count = 0
-
-    occupied_count = 0
-
-    results = []
-
-    for box in prediction.boxes:
-
-        cls = int(box.cls.item())
-
-        conf = float(box.conf.item())
-
-        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-
-        x1 = int(x1)
-        y1 = int(y1)
-        x2 = int(x2)
-        y2 = int(y2)
-
-        label = model.names[cls]
-
-        if cls == CLASS_EMPTY:
-
-            color = (0,255,0)
-
-            status = "Empty"
-
-            empty_count += 1
-
-        else:
-
-            color = (0,0,255)
-
-            status = "Occupied"
-
-            occupied_count += 1
-
-        cv2.rectangle(
-
-            canvas,
-
-            (x1,y1),
-
-            (x2,y2),
-
-            color,
-
-            2
-
-        )
-
-        text = f"{status} {conf:.2f}"
-
-        cv2.putText(
-
-            canvas,
-
-            text,
-
-            (x1,y1-10),
-
-            cv2.FONT_HERSHEY_SIMPLEX,
-
-            0.6,
-
-            color,
-
-            2
-
-        )
-
-        results.append({
-
-            "class":label,
-
-            "status":status,
-
-            "confidence":round(conf*100,2),
-
-            "bbox":[x1,y1,x2,y2]
-
-        })
-
-    total = empty_count + occupied_count
-
-    cv2.rectangle(
-
-        canvas,
-
-        (10,10),
-
-        (330,80),
-
-        (20,20,20),
-
-        -1
-
     )
 
-    cv2.putText(
+    total = 0
+    empty = 0
+    occupied = 0
 
-        canvas,
+    data = []
 
-        f"Available : {empty_count}",
+    for r in results:
 
-        (20,35),
+        boxes = r.boxes
 
-        cv2.FONT_HERSHEY_SIMPLEX,
+        total = len(boxes)
 
-        0.7,
+        for i, box in enumerate(boxes):
 
-        (0,255,0),
+            cls = int(box.cls)
 
-        2
+            conf = float(box.conf)
 
-    )
+            label = CLASS_NAMES[cls]
 
-    cv2.putText(
+            if label.lower() == "empty":
 
-        canvas,
+                color = (0,255,0)
 
-        f"Occupied : {occupied_count}",
+                empty += 1
 
-        (20,65),
+                status = "Empty"
 
-        cv2.FONT_HERSHEY_SIMPLEX,
+            else:
 
-        0.7,
+                color = (0,0,255)
 
-        (0,0,255),
+                occupied += 1
 
-        2
+                status = "Occupied"
 
-    )
+            x1,y1,x2,y2 = map(int,box.xyxy[0])
 
-    return {
+            cv2.rectangle(
 
-        "image":canvas,
+                frame,
 
-        "results":results,
+                (x1,y1),
 
-        "available":empty_count,
+                (x2,y2),
 
-        "occupied":occupied_count,
+                color,
 
-        "total":total
+                2
 
-    }
+            )
 
-# =====================================================
-# Route Home
-# =====================================================
+            text = f"{status} {conf:.2f}"
+
+            cv2.putText(
+
+                frame,
+
+                text,
+
+                (x1,y1-10),
+
+                cv2.FONT_HERSHEY_SIMPLEX,
+
+                0.6,
+
+                color,
+
+                2
+
+            )
+
+            data.append({
+
+                "slot_id":i+1,
+
+                "status":status,
+
+                "confidence":round(conf*100,2)
+
+            })
+
+    return frame,data,total,empty,occupied
+
+
+# ===========================
+# Home
+# ===========================
 
 @app.route("/")
 def home():
-
     return render_template("index.html")
 
 
-# =====================================================
-# Detect Image
-# =====================================================
+# ===========================
+# IMAGE DETECTION
+# ===========================
 
 @app.route("/detect/image", methods=["POST"])
 def detect_image():
 
     if "image" not in request.files:
-        return jsonify({
-            "success": False,
-            "message": "Image tidak ditemukan"
-        }), 400
+        return jsonify({"error": "No Image"}), 400
 
     file = request.files["image"]
 
     image_bytes = np.frombuffer(file.read(), np.uint8)
 
-    image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
+    frame = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
 
-    if image is None:
-        return jsonify({
-            "success": False,
-            "message": "Gagal membaca gambar"
-        }), 400
+    if frame is None:
+        return jsonify({"error": "Invalid Image"}), 400
 
-    output = predict_image(image)
+    frame, results, total, empty, occupied = detect_frame(frame)
 
     return jsonify({
 
         "success": True,
 
-        "image": image_to_base64(output["image"]),
+        "image_b64": image_to_base64(frame),
 
-        "available": output["available"],
+        "results": results,
 
-        "occupied": output["occupied"],
+        "total": total,
 
-        "total": output["total"],
+        "n_tersedia": empty,
 
-        "results": output["results"]
+        "n_penuh": occupied
 
     })
 
 
-# =====================================================
-# Detect Webcam Frame
-# =====================================================
+# ===========================
+# LIVE CAMERA
+# ===========================
 
 @app.route("/detect/frame", methods=["POST"])
-def detect_frame():
+def detect_live():
 
     data = request.get_json()
 
     if data is None:
+        return jsonify({"error": "No Frame"}), 400
 
-        return jsonify({
+    frame_data = data["frame"]
 
-            "success":False,
+    frame_data = frame_data.split(",")[1]
 
-            "message":"Tidak ada data"
+    image = base64.b64decode(frame_data)
 
-        }),400
+    npimg = np.frombuffer(image, np.uint8)
 
+    frame = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
-    if "frame" not in data:
+    if frame is None:
+        return jsonify({"error": "Invalid Frame"}), 400
 
-        return jsonify({
-
-            "success":False,
-
-            "message":"Frame kosong"
-
-        }),400
-
-
-    image = decode_base64_image(data["frame"])
-
-    if image is None:
-
-        return jsonify({
-
-            "success":False,
-
-            "message":"Frame tidak valid"
-
-        }),400
-
-
-    output = predict_image(image)
+    frame, results, total, empty, occupied = detect_frame(frame)
 
     return jsonify({
 
-        "success":True,
+        "success": True,
 
-        "image":image_to_base64(output["image"]),
+        "image_b64": image_to_base64(frame),
 
-        "available":output["available"],
+        "results": results,
 
-        "occupied":output["occupied"],
+        "total": total,
 
-        "total":output["total"],
+        "n_tersedia": empty,
 
-        "results":output["results"]
+        "n_penuh": occupied
 
     })
 
 
-# =====================================================
-# Health Check
-# =====================================================
+# ===========================
+# VIDEO DETECTION
+# ===========================
+
+@app.route("/detect/video", methods=["POST"])
+def detect_video():
+
+    if "video" not in request.files:
+        return jsonify({"error": "No Video"}), 400
+
+    file = request.files["video"]
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+
+    file.save(temp.name)
+
+    cap = cv2.VideoCapture(temp.name)
+
+    last_frame = None
+
+    results = []
+
+    total = 0
+    empty = 0
+    occupied = 0
+
+    while True:
+
+        ret, frame = cap.read()
+
+        if not ret:
+            break
+
+        frame, results, total, empty, occupied = detect_frame(frame)
+
+        last_frame = frame.copy()
+
+    cap.release()
+
+    os.remove(temp.name)
+
+    if last_frame is None:
+        return jsonify({"error": "Video Error"}), 400
+
+    return jsonify({
+
+        "success": True,
+
+        "image_b64": image_to_base64(last_frame),
+
+        "results": results,
+
+        "total": total,
+
+        "n_tersedia": empty,
+
+        "n_penuh": occupied
+
+    })
+
+
+# ===========================
+# HEALTH CHECK
+# ===========================
 
 @app.route("/health")
 def health():
@@ -373,38 +294,16 @@ def health():
 
         "status":"running",
 
-        "model":"best.pt",
-
-        "classes":model.names
+        "model":"best.pt"
 
     })
 
 
-# =====================================================
-# API Model Info
-# =====================================================
+# ===========================
+# MAIN
+# ===========================
 
-@app.route("/model")
-def model_info():
-
-    return jsonify({
-
-        "model":"YOLO",
-
-        "weights":"best.pt",
-
-        "classes":model.names,
-
-        "total_class":len(model.names)
-
-    })
-
-
-# =====================================================
-# Run Flask
-# =====================================================
-
-if __name__=="__main__":
+if __name__ == "__main__":
 
     app.run(
 
@@ -415,3 +314,5 @@ if __name__=="__main__":
         debug=True
 
     )
+
+
