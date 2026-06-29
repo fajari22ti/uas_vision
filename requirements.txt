@@ -1,8 +1,7 @@
-flask
-flask-cors
+Flask
+Flask-Cors
 gunicorn
-numpy
+ultralytics
 opencv-python-headless
-scikit-image
-scikit-learn
-joblib
+numpy
+pillow
