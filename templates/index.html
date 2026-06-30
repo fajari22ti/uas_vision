@@ -1,332 +1,170 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
 <title>Smart Parking Slot Detection</title>
-
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" rel="stylesheet">
-
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-
 </head>
-
 <body>
 
 <nav class="navbar navbar-dark bg-dark shadow">
-
-<div class="container-fluid">
-
-<span class="navbar-brand">
-
-<i class="fa-solid fa-square-parking"></i>
-
-Smart Parking Slot Detection System
-
-</span>
-
-<span class="text-light">
-
-YOLOv11 Real-Time Monitoring
-
-</span>
-
-</div>
-
+  <div class="container-fluid">
+    <span class="navbar-brand">
+      <i class="fa-solid fa-square-parking"></i>
+      Smart Parking Slot Detection System
+    </span>
+    <span class="text-light d-none d-md-inline">YOLOv11 Real-Time Monitoring</span>
+  </div>
 </nav>
 
 <div class="container-fluid mt-4">
-
-<div class="row">
-
-<!-- LEFT -->
-
-<div class="col-lg-8">
-
-<div class="card shadow-lg border-0">
-
-<div class="card-header">
-
-<h5>
-
-<i class="fa-solid fa-video"></i>
-
-Detection Preview
-
-</h5>
-
-</div>
-
-<div class="card-body text-center">
-
-<img
-
-id="preview"
-
-src="https://placehold.co/900x520/1e293b/ffffff?text=Waiting+for+Detection"
-
-class="img-fluid rounded"
-
->
-
-</div>
-
-</div>
-
-</div>
-
-<!-- RIGHT -->
-
-<div class="col-lg-4">
-
-<div class="card shadow border-0 mb-3">
-
-<div class="card-header">
-
-<h5>
-
-<i class="fa-solid fa-sliders"></i>
-
-Detection Mode
-
-</h5>
-
-</div>
-
-<div class="card-body">
-
-<button class="btn btn-primary w-100 mb-3" id="btnImage">
-
-<i class="fa-solid fa-image"></i>
-
-Upload Image
-
-</button>
-
-<input type="file"
-
-id="imageInput"
-
-accept="image/*"
-
-hidden>
-
-<button class="btn btn-success w-100 mb-3"
-
-id="btnVideo">
-
-<i class="fa-solid fa-film"></i>
-
-Upload Video
-
-</button>
-
-<input type="file"
-
-id="videoInput"
-
-accept="video/*"
-
-hidden>
-
-<button class="btn btn-danger w-100 mb-3"
-
-id="btnCamera">
-
-<i class="fa-solid fa-camera"></i>
-
-Live Camera
-
-</button>
-
-<button class="btn btn-secondary w-100"
-
-id="btnStop">
-
-<i class="fa-solid fa-stop"></i>
-
-Stop Detection
-
-</button>
-
-</div>
-
-</div>
-
-<!-- Statistics -->
-
-<div class="row g-3">
-
-<div class="col-6">
-
-<div class="card stat-card bg-primary">
-
-<div class="card-body">
-
-<h6>Total Slot</h6>
-
-<h2 id="totalSlot">0</h2>
-
-</div>
-
-</div>
-
-</div>
-
-<div class="col-6">
-
-<div class="card stat-card bg-success">
-
-<div class="card-body">
-
-<h6>Empty</h6>
-
-<h2 id="emptySlot">0</h2>
-
-</div>
-
-</div>
-
-</div>
-
-<div class="col-6">
-
-<div class="card stat-card bg-danger">
-
-<div class="card-body">
-
-<h6>Occupied</h6>
-
-<h2 id="occupiedSlot">0</h2>
-
-</div>
-
-</div>
-
-</div>
-
-<div class="col-6">
-
-<div class="card stat-card bg-warning">
-
-<div class="card-body">
-
-<h6>FPS</h6>
-
-<h2 id="fps">0</h2>
-
-</div>
-
-</div>
-
-</div>
-
-</div>
-
-</div>
-
-</div>
-
-<!-- TABLE -->
-
-<div class="card shadow border-0 mt-4">
-
-<div class="card-header">
-
-<h5>
-
-<i class="fa-solid fa-table"></i>
-
-Detection Result
-
-</h5>
-
-</div>
-
-<div class="card-body">
-
-<div class="table-responsive">
-
-<table class="table table-hover align-middle">
-
-<thead class="table-dark">
-
-<tr>
-
-<th>Slot</th>
-
-<th>Status</th>
-
-<th>Confidence</th>
-
-</tr>
-
-</thead>
-
-<tbody id="resultTable">
-
-<tr>
-
-<td colspan="3"
-
-class="text-center">
-
-No Detection
-
-</td>
-
-</tr>
-
-</tbody>
-
-</table>
-
-</div>
-
-</div>
-
-</div>
-
+  <div class="row g-3">
+
+    <!-- LEFT: Preview -->
+    <div class="col-lg-8">
+      <div class="card shadow-lg border-0">
+        <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <h5 class="mb-0"><i class="fa-solid fa-video"></i> Detection Preview</h5>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary" id="modeBadge">Idle</span>
+            <button class="btn btn-sm btn-outline-light" id="btnROIMode" title="Tambah bounding box manual">
+              <i class="fa-solid fa-draw-polygon"></i> ROI Manual
+            </button>
+            <button class="btn btn-sm btn-outline-light" id="btnROIReset" title="Hapus semua ROI manual">
+              <i class="fa-solid fa-eraser"></i>
+            </button>
+          </div>
+        </div>
+        <div class="card-body text-center position-relative" id="previewWrap">
+          <img id="preview" src="https://placehold.co/900x520/1e293b/ffffff?text=Waiting+for+Detection" class="img-fluid rounded" draggable="false">
+          <video id="liveVideo" class="img-fluid rounded d-none" autoplay playsinline muted></video>
+          <canvas id="roiCanvas" class="roi-canvas d-none"></canvas>
+          <canvas id="captureCanvas" class="d-none"></canvas>
+        </div>
+        <div class="card-footer small text-muted" id="roiHint">
+          💡 Klik <strong>ROI Manual</strong> lalu gambar kotak di atas gambar/video untuk menandai slot parkir secara manual. Kosongkan untuk kembali ke mode otomatis.
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Controls -->
+    <div class="col-lg-4">
+
+      <div class="card shadow border-0 mb-3">
+        <div class="card-header">
+          <h5 class="mb-0"><i class="fa-solid fa-sliders"></i> Detection Mode</h5>
+        </div>
+        <div class="card-body">
+
+          <button class="btn btn-primary w-100 mb-2" id="btnImage">
+            <i class="fa-solid fa-image"></i> Upload Image
+          </button>
+          <input type="file" id="imageInput" accept="image/*" hidden>
+
+          <button class="btn btn-danger w-100 mb-2" id="btnCamera">
+            <i class="fa-solid fa-camera"></i> Live Camera
+          </button>
+
+          <!-- Camera source selector -->
+          <div id="cameraSelectWrap" class="mb-2 d-none">
+            <label class="form-label small text-muted mb-1">Sumber Kamera</label>
+            <select class="form-select form-select-sm" id="cameraSelect"></select>
+          </div>
+
+          <button class="btn btn-secondary w-100" id="btnStop">
+            <i class="fa-solid fa-stop"></i> Stop Detection
+          </button>
+
+        </div>
+      </div>
+
+      <!-- Statistics -->
+      <div class="row g-3">
+        <div class="col-6">
+          <div class="card stat-card bg-primary">
+            <div class="card-body">
+              <h6>Total Slot</h6>
+              <h2 id="totalSlot">0</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="card stat-card bg-success">
+            <div class="card-body">
+              <h6>Empty</h6>
+              <h2 id="emptySlot">0</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="card stat-card bg-danger">
+            <div class="card-body">
+              <h6>Occupied</h6>
+              <h2 id="occupiedSlot">0</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="card stat-card bg-warning">
+            <div class="card-body">
+              <h6>FPS</h6>
+              <h2 id="fps">0</h2>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="card shadow border-0 mt-4 mb-4">
+    <div class="card-header">
+      <h5 class="mb-0"><i class="fa-solid fa-table"></i> Detection Result</h5>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-dark">
+            <tr>
+              <th>Slot</th>
+              <th>Status</th>
+              <th>Confidence</th>
+            </tr>
+          </thead>
+          <tbody id="resultTable">
+            <tr><td colspan="3" class="text-center text-muted">No Detection</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Loading -->
-
-<div id="loadingOverlay">
-
-<div class="spinner-border text-light"></div>
-
-<h5 class="mt-3 text-light">
-
-Processing...
-
-</h5>
-
+<div id="loadingOverlay" class="d-none">
+  <div class="spinner-border text-light"></div>
+  <h5 class="mt-3 text-light" id="loadingText">Processing...</h5>
 </div>
 
-<footer class="text-center mt-5 mb-4">
+<!-- Toast -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div id="appToast" class="toast align-items-center border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="appToastBody">Pesan</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
 
-Developed by
-
-<strong>
-
-Rizki Fajari
-
-</strong>
-
-<br>
-
-2255301167
-
+<footer class="text-center mt-5 mb-4 text-muted">
+  Developed by <strong>Rizki Fajari</strong><br>2255301167
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
 <script src="{{ url_for('static', filename='script.js') }}"></script>
-
 </body>
-
 </html>
