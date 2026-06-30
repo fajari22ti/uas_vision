@@ -1,380 +1,122 @@
-/* ==============================
-   SMART PARKING DASHBOARD
-   Rizki Fajari
-=================================*/
-
-*{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+body {
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
-body{
-    background:#0f172a;
-    color:white;
+.card {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 12px;
 }
 
-/* ================= NAVBAR ================= */
-
-.navbar{
-    background:linear-gradient(90deg,#111827,#1e3a8a)!important;
-    padding:15px 25px;
+.card-header {
+  background: #16213a;
+  border-bottom: 1px solid #334155;
+  border-radius: 12px 12px 0 0 !important;
 }
 
-.navbar-brand{
-    font-size:24px;
-    font-weight:700;
-    letter-spacing:.5px;
+.card-footer {
+  background: #16213a;
+  border-top: 1px solid #334155;
 }
 
-.navbar span:last-child{
-    font-size:15px;
-    opacity:.85;
+.table {
+  --bs-table-bg: transparent;
+  --bs-table-color: #e2e8f0;
+  --bs-table-hover-bg: #283548;
+  --bs-table-hover-color: #e2e8f0;
 }
 
-/* ================= CARD ================= */
-
-.card{
-    background:#1e293b;
-    border:none;
-    border-radius:18px;
-    overflow:hidden;
-    transition:.3s;
+.table thead.table-dark {
+  --bs-table-bg: #0f172a;
 }
 
-.card:hover{
-    transform:translateY(-3px);
-    box-shadow:0 12px 30px rgba(0,0,0,.35);
+.form-select {
+  background-color: #0f172a;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+.form-select:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 0.2rem rgba(56,189,248,.25);
 }
 
-.card-header{
-    background:#273449;
-    color:white;
-    border:none;
+.stat-card {
+  border: none;
+  border-radius: 12px;
+  text-align: center;
+  color: #fff;
+}
+.stat-card h6 {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  opacity: .85;
+  margin-bottom: 4px;
+}
+.stat-card h2 {
+  font-size: 1.9rem;
+  font-weight: 800;
+  margin: 0;
 }
 
-.card-header h5{
-    margin:0;
-    font-weight:600;
+#previewWrap {
+  background: #060b15;
+  border-radius: 0 0 12px 12px;
+  padding: 14px;
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.card-body{
-    color:white;
+#preview, #liveVideo {
+  max-height: 65vh;
+  border-radius: 8px;
 }
 
-/* ================= PREVIEW ================= */
-
-#preview{
-
-    width:100%;
-    height:540px;
-
-    object-fit:contain;
-
-    border-radius:15px;
-
-    background:#111827;
-
-    border:2px dashed #334155;
+.roi-canvas {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  border-radius: 8px;
+  cursor: crosshair;
 }
 
-/* ================= BUTTON ================= */
-
-.btn{
-
-    border-radius:12px;
-
-    font-weight:600;
-
-    padding:12px;
-
-    transition:.3s;
+#btnROIMode.active {
+  background: #38bdf8;
+  color: #0f172a;
+  border-color: #38bdf8;
 }
 
-.btn:hover{
-
-    transform:translateY(-2px);
-
-    box-shadow:0 5px 15px rgba(0,0,0,.3);
+#loadingOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.72);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
 }
 
-.btn-primary{
-
-    background:#2563eb;
-    border:none;
+.toast {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
 }
+.toast.text-bg-success { background: #14532d !important; border-color: #22c55e; }
+.toast.text-bg-danger  { background: #450a0a !important; border-color: #ef4444; }
 
-.btn-success{
-
-    background:#16a34a;
-    border:none;
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: pulse 1.2s infinite;
+  margin-right: 5px;
 }
+@keyframes pulse { 0%,100% {opacity:1} 50% {opacity:.3} }
 
-.btn-danger{
-
-    background:#dc2626;
-    border:none;
-}
-
-.btn-secondary{
-
-    background:#475569;
-    border:none;
-}
-
-/* ================= STAT CARD ================= */
-
-.stat-card{
-
-    border-radius:18px;
-
-    color:white;
-
-    transition:.3s;
-}
-
-.stat-card:hover{
-
-    transform:scale(1.03);
-}
-
-.stat-card .card-body{
-
-    text-align:center;
-}
-
-.stat-card h6{
-
-    opacity:.9;
-    font-size:15px;
-}
-
-.stat-card h2{
-
-    margin-top:10px;
-
-    font-size:38px;
-
-    font-weight:700;
-}
-
-/* ================= TABLE ================= */
-
-.table{
-
-    color:white;
-}
-
-.table thead{
-
-    background:#0f172a;
-}
-
-.table-dark{
-
-    background:#0f172a!important;
-}
-
-.table tbody tr{
-
-    transition:.25s;
-}
-
-.table tbody tr:hover{
-
-    background:#334155;
-}
-
-/* ================= STATUS BADGE ================= */
-
-.badge-empty{
-
-    background:#22c55e;
-
-    color:white;
-
-    padding:8px 12px;
-
-    border-radius:8px;
-
-    font-size:14px;
-}
-
-.badge-occupied{
-
-    background:#ef4444;
-
-    color:white;
-
-    padding:8px 12px;
-
-    border-radius:8px;
-
-    font-size:14px;
-}
-
-/* ================= LOADING ================= */
-
-#loadingOverlay{
-
-    position:fixed;
-
-    top:0;
-
-    left:0;
-
-    width:100%;
-
-    height:100%;
-
-    background:rgba(0,0,0,.7);
-
-    display:none;
-
-    justify-content:center;
-
-    align-items:center;
-
-    flex-direction:column;
-
-    z-index:9999;
-}
-
-/* ================= FOOTER ================= */
-
-footer{
-
-    color:#94a3b8;
-
-    font-size:15px;
-}
-
-/* ================= SCROLL ================= */
-
-::-webkit-scrollbar{
-
-    width:10px;
-}
-
-::-webkit-scrollbar-track{
-
-    background:#0f172a;
-}
-
-::-webkit-scrollbar-thumb{
-
-    background:#475569;
-
-    border-radius:10px;
-}
-
-/* ================= ANIMATION ================= */
-
-.fadeIn{
-
-    animation:fadeIn .5s;
-}
-
-@keyframes fadeIn{
-
-    from{
-
-        opacity:0;
-
-        transform:translateY(10px);
-    }
-
-    to{
-
-        opacity:1;
-
-        transform:translateY(0);
-    }
-}
-
-/* ================= RESPONSIVE ================= */
-
-@media(max-width:992px){
-
-#preview{
-
-height:420px;
-
-}
-
-.navbar-brand{
-
-font-size:18px;
-
-}
-
-.stat-card h2{
-
-font-size:30px;
-
-}
-
-}
-
-@media(max-width:768px){
-
-#preview{
-
-height:300px;
-
-}
-
-.card{
-
-margin-bottom:20px;
-
-}
-
-.btn{
-
-margin-bottom:10px;
-
-}
-
-.stat-card h2{
-
-font-size:28px;
-
-}
-
-}
-
-@media(max-width:576px){
-
-.navbar{
-
-padding:10px;
-}
-
-.navbar-brand{
-
-font-size:16px;
-}
-
-#preview{
-
-height:250px;
-}
-
-.card-header h5{
-
-font-size:16px;
-}
-
-.table{
-
-font-size:13px;
-}
-
-.stat-card h2{
-
-font-size:24px;
-}
-
-}
+footer { font-size: .82rem; }
