@@ -245,6 +245,34 @@ el('btnROIReset').addEventListener('click', () => {
   showToast('ROI manual direset — kembali ke mode otomatis', 'ok');
 });
 
+btnDetect.onclick = () => {
+  if (currentImageFile == null) {
+    alert("Upload gambar terlebih dahulu.");
+    return;
+  }
+
+  let formData = new FormData();
+  formData.append("image", currentImageFile);
+
+  showLoading();
+
+  fetch("/detect/image", {
+    method: "POST",
+    body: formData
+  })
+    .then(res => res.json())
+    .then(data => {
+      hideLoading();
+      updatePreview(data.image_b64);
+      updateStatistic(data);
+      updateTable(data.results);
+    })
+    .catch(err => {
+      hideLoading();
+      console.error(err); // Mengubah console.log menjadi console.error untuk error handling yang lebih baik
+    });
+};
+
 function setupROICanvas() {
   const activeEl = mode === 'camera' && !el('liveVideo').classList.contains('d-none')
     ? el('liveVideo')
