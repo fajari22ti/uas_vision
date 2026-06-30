@@ -30,29 +30,23 @@ let cameraRunning = false;
 //==============================
 
 function showLoading(){
-
-loading.style.display="flex";
-
+    loading.style.display = "flex";
 }
 
 function hideLoading(){
-
-loading.style.display="none";
-
+    loading.style.display = "none";
 }
 
 //==============================
 // Update Statistics
+// FIX: backend Flask mengirim field "available", "occupied", "total"
+// (bukan n_tersedia / n_penuh)
 //==============================
 
 function updateStatistic(data){
-
-totalSlot.innerHTML=data.total;
-
-emptySlot.innerHTML=data.n_tersedia;
-
-occupiedSlot.innerHTML=data.n_penuh;
-
+    totalSlot.innerHTML    = data.total;
+    emptySlot.innerHTML    = data.available;
+    occupiedSlot.innerHTML = data.occupied;
 }
 
 //==============================
@@ -60,281 +54,203 @@ occupiedSlot.innerHTML=data.n_penuh;
 //==============================
 
 function updateTable(results){
+    tableBody.innerHTML = "";
 
-tableBody.innerHTML="";
+    if (!results || results.length === 0) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="3" class="text-center">
+                    No Detection
+                </td>
+            </tr>
+        `;
+        return;
+    }
 
-if(results.length===0){
+    results.forEach((slot, idx) => {
+        let badge = slot.status === "Empty"
+            ? '<span class="badge-empty">Empty</span>'
+            : '<span class="badge-occupied">Occupied</span>';
 
-tableBody.innerHTML=
-`
-<tr>
-<td colspan="3" class="text-center">
-No Detection
-</td>
-</tr>
-`;
+        // FIX: backend tidak mengirim "slot_id", gunakan index + 1
+        let slotId = slot.slot_id ?? (idx + 1);
 
-return;
-
-}
-
-results.forEach(slot=>{
-
-let badge=
-slot.status==="Empty"
-?
-'<span class="badge-empty">Empty</span>'
-:
-'<span class="badge-occupied">Occupied</span>';
-
-tableBody.innerHTML+=
-`
-<tr>
-
-<td>${slot.slot_id}</td>
-
-<td>${badge}</td>
-
-<td>${slot.confidence}%</td>
-
-</tr>
-`;
-
-});
-
+        tableBody.innerHTML += `
+            <tr>
+                <td>${slotId}</td>
+                <td>${badge}</td>
+                <td>${slot.confidence}%</td>
+            </tr>
+        `;
+    });
 }
 
 //==============================
 // Update Preview
+// FIX: backend mengirim field "image", bukan "image_b64"
 //==============================
 
-function updatePreview(image){
-
-preview.src="data:image/jpeg;base64,"+image;
-
+function updatePreview(base64String){
+    if (!base64String) {
+        console.warn("Preview kosong — backend tidak mengirim gambar");
+        return;
+    }
+    preview.src = "data:image/jpeg;base64," + base64String;
 }
 
 //==============================
 // Upload Image
 //==============================
 
-btnImage.onclick=()=>{
-
-imageInput.click();
-
+btnImage.onclick = () => {
+    imageInput.click();
 };
 
-imageInput.onchange=()=>{
+imageInput.onchange = () => {
+    let file = imageInput.files[0];
+    if (!file) return;
 
-let file=imageInput.files[0];
+    let formData = new FormData();
+    formData.append("image", file);
 
-if(!file)return;
+    showLoading();
 
-let formData=new FormData();
+    fetch("/detect/image", {
+        method: "POST",
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        hideLoading();
 
-formData.append("image",file);
+        if (!data.success) {
+            alert(data.message || "Deteksi gagal");
+            return;
+        }
 
-showLoading();
-
-fetch("/detect/image",{
-
-method:"POST",
-
-body:formData
-
-})
-
-.then(res=>res.json())
-
-.then(data=>{
-
-hideLoading();
-
-updatePreview(data.image_b64);
-
-updateStatistic(data);
-
-updateTable(data.results);
-
-})
-
-.catch(err=>{
-
-hideLoading();
-
-alert("Detection Failed");
-
-console.log(err);
-
-});
-
+        // FIX: pakai data.image (sesuai key yang dikirim Flask)
+        updatePreview(data.image);
+        updateStatistic(data);
+        updateTable(data.results);
+    })
+    .catch(err => {
+        hideLoading();
+        alert("Detection Failed");
+        console.log(err);
+    });
 };
 
 //==============================
 // Upload Video
 //==============================
 
-btnVideo.onclick=()=>{
-
-videoInput.click();
-
+btnVideo.onclick = () => {
+    videoInput.click();
 };
 
-videoInput.onchange=()=>{
+videoInput.onchange = () => {
+    let file = videoInput.files[0];
+    if (!file) return;
 
-let file=videoInput.files[0];
+    let formData = new FormData();
+    formData.append("video", file);
 
-if(!file)return;
+    showLoading();
 
-let formData=new FormData();
+    fetch("/detect/video", {
+        method: "POST",
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        hideLoading();
 
-formData.append("video",file);
+        if (!data.success) {
+            alert(data.message || "Deteksi gagal");
+            return;
+        }
 
-showLoading();
-
-fetch("/detect/video",{
-
-method:"POST",
-
-body:formData
-
-})
-
-.then(res=>res.json())
-
-.then(data=>{
-
-hideLoading();
-
-updatePreview(data.image_b64);
-
-updateStatistic(data);
-
-updateTable(data.results);
-
-})
-
-.catch(err=>{
-
-hideLoading();
-
-console.log(err);
-
-alert("Video Error");
-
-});
-
+        updatePreview(data.image);
+        updateStatistic(data);
+        updateTable(data.results);
+    })
+    .catch(err => {
+        hideLoading();
+        console.log(err);
+        alert("Video Error");
+    });
 };
 
 //==============================
 // Live Camera
 //==============================
 
-btnCamera.onclick=async()=>{
+btnCamera.onclick = async () => {
+    if (cameraRunning) return;
+    cameraRunning = true;
 
-if(cameraRunning)return;
+    stream = await navigator.mediaDevices.getUserMedia({ video: true });
 
-cameraRunning=true;
+    const video = document.createElement("video");
+    video.srcObject = stream;
+    await video.play();
 
-stream=await navigator.mediaDevices.getUserMedia({
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
 
-video:true
+    async function detect(){
+        if (!cameraRunning) return;
 
-});
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
 
-const video=document.createElement("video");
+        let frame = canvas.toDataURL("image/jpeg");
+        let start = performance.now();
 
-video.srcObject=stream;
+        fetch("/detect/frame", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ frame: frame })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) return;
 
-await video.play();
+            updatePreview(data.image);
+            updateStatistic(data);
+            updateTable(data.results);
 
-const canvas=document.createElement("canvas");
+            let end = performance.now();
+            fpsText.innerHTML = Math.round(1000 / (end - start));
 
-const ctx=canvas.getContext("2d");
+            if (cameraRunning) {
+                requestAnimationFrame(detect);
+            }
+        })
+        .catch(err => console.log(err));
+    }
 
-async function detect(){
-
-if(!cameraRunning)return;
-
-canvas.width=video.videoWidth;
-
-canvas.height=video.videoHeight;
-
-ctx.drawImage(video,0,0);
-
-let frame=canvas.toDataURL("image/jpeg");
-
-let start=performance.now();
-
-fetch("/detect/frame",{
-
-method:"POST",
-
-headers:{
-
-"Content-Type":"application/json"
-
-},
-
-body:JSON.stringify({
-
-frame:frame
-
-})
-
-})
-
-.then(res=>res.json())
-
-.then(data=>{
-
-updatePreview(data.image_b64);
-
-updateStatistic(data);
-
-updateTable(data.results);
-
-let end=performance.now();
-
-fpsText.innerHTML=Math.round(1000/(end-start));
-
-if(cameraRunning){
-
-requestAnimationFrame(detect);
-
-}
-
-});
-
-}
-
-detect();
-
+    detect();
 };
 
 //==============================
 // Stop Camera
 //==============================
 
-btnStop.onclick=()=>{
-
-cameraRunning=false;
-
-if(stream){
-
-stream.getTracks().forEach(track=>track.stop());
-
-}
-
-preview.src="https://placehold.co/900x520/1e293b/ffffff?text=Detection+Stopped";
-
+btnStop.onclick = () => {
+    cameraRunning = false;
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+    }
+    preview.src = "https://placehold.co/900x520/1e293b/ffffff?text=Detection+Stopped";
 };
 
 //==============================
 // Initial
 //==============================
 
-totalSlot.innerHTML=0;
-emptySlot.innerHTML=0;
-occupiedSlot.innerHTML=0;
-fpsText.innerHTML=0;
+totalSlot.innerHTML = 0;
+emptySlot.innerHTML = 0;
+occupiedSlot.innerHTML = 0;
+fpsText.innerHTML = 0;
