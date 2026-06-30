@@ -1,8 +1,4 @@
-/* ──────────────────────────────────────────────────────────────────────
-   Smart Parking Slot Detection — Frontend Logic
-   Mode: Image Upload | Live Camera (dengan pilihan sumber kamera)
-   Fitur: ROI manual (gambar bounding box sendiri)
-   ────────────────────────────────────────────────────────────────────── */
+
 
 let mode = 'idle';            // 'idle' | 'image' | 'camera'
 let selectedFile = null;
