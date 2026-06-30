@@ -1,256 +1,394 @@
-// =============================
-// SMART PARKING DETECTION
-// Rizki Fajari
-// =============================
+/* ──────────────────────────────────────────────────────────────────────
+   Smart Parking Slot Detection — Frontend Logic
+   Mode: Image Upload | Live Camera (dengan pilihan sumber kamera)
+   Fitur: ROI manual (gambar bounding box sendiri)
+   ────────────────────────────────────────────────────────────────────── */
 
-const preview = document.getElementById("preview");
+let mode = 'idle';            // 'idle' | 'image' | 'camera'
+let selectedFile = null;
+let camStream = null;
+let camTimer  = null;
+let camInterval = 1500;       // ms antar deteksi saat live camera
+let lastFrameTime = performance.now();
 
-const imageInput = document.getElementById("imageInput");
-const videoInput = document.getElementById("videoInput");
+let roiList   = [];           // [[x,y,w,h], ...] dalam koordinat gambar asli
+let roiActive = false;
+let roiDrawing = false;
+let roiStart  = null;
+let natW = 0, natH = 0;       // ukuran asli gambar/video
+let dispW = 0, dispH = 0;     // ukuran tampil di layar
 
-const btnImage = document.getElementById("btnImage");
-const btnVideo = document.getElementById("btnVideo");
-const btnCamera = document.getElementById("btnCamera");
-const btnStop = document.getElementById("btnStop");
+const el = (id) => document.getElementById(id);
 
-const loading = document.getElementById("loadingOverlay");
-
-const totalSlot = document.getElementById("totalSlot");
-const emptySlot = document.getElementById("emptySlot");
-const occupiedSlot = document.getElementById("occupiedSlot");
-const fpsText = document.getElementById("fps");
-
-const tableBody = document.getElementById("resultTable");
-
-let stream = null;
-let cameraRunning = false;
-
-//==============================
-// Loading
-//==============================
-
-function showLoading(){
-    loading.style.display = "flex";
+/* ── Toast Helper ─────────────────────────────────────────────────────── */
+function showToast(msg, type = '') {
+  const toastEl = el('appToast');
+  el('appToastBody').textContent = msg;
+  toastEl.classList.remove('text-bg-success', 'text-bg-danger');
+  if (type === 'ok')  toastEl.classList.add('text-bg-success');
+  if (type === 'err') toastEl.classList.add('text-bg-danger');
+  const t = bootstrap.Toast.getOrCreateInstance(toastEl, { delay: 2800 });
+  t.show();
 }
 
-function hideLoading(){
-    loading.style.display = "none";
+/* ── Loading Overlay ──────────────────────────────────────────────────── */
+function setLoading(on, text = 'Processing...') {
+  el('loadingOverlay').classList.toggle('d-none', !on);
+  el('loadingText').textContent = text;
 }
 
-//==============================
-// Update Statistics
-// FIX: backend Flask mengirim field "available", "occupied", "total"
-// (bukan n_tersedia / n_penuh)
-//==============================
+/* ──────────────────────────────────────────────────────────────────────
+   MODE: IMAGE UPLOAD
+   ────────────────────────────────────────────────────────────────────── */
+el('btnImage').addEventListener('click', () => el('imageInput').click());
 
-function updateStatistic(data){
-    totalSlot.innerHTML    = data.total;
-    emptySlot.innerHTML    = data.available;
-    occupiedSlot.innerHTML = data.occupied;
+el('imageInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  loadImageFile(file);
+});
+
+function loadImageFile(file) {
+  stopCamera();
+  selectedFile = file;
+  mode = 'image';
+  el('modeBadge').textContent = 'Image';
+  el('modeBadge').className = 'badge bg-primary';
+
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    natW = img.naturalWidth;
+    natH = img.naturalHeight;
+    el('liveVideo').classList.add('d-none');
+    el('preview').classList.remove('d-none');
+    el('preview').src = url;
+    setupROICanvas();
+    detectImage(file);
+  };
+  img.src = url;
 }
 
-//==============================
-// Update Table
-//==============================
+async function detectImage(file) {
+  setLoading(true, 'Mendeteksi slot parkir...');
+  try {
+    const fd = new FormData();
+    fd.append('image', file);
+    fd.append('roi', roiList.length ? JSON.stringify(roiList) : '');
 
-function updateTable(results){
-    tableBody.innerHTML = "";
+    const res = await fetch('/detect/image', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Deteksi gagal');
 
-    if (!results || results.length === 0) {
-        tableBody.innerHTML = `
-            <tr>
-                <td colspan="3" class="text-center">
-                    No Detection
-                </td>
-            </tr>
-        `;
-        return;
-    }
+    el('preview').src = 'data:image/jpeg;base64,' + data.image_b64;
+    updateStats(data);
+    updateTable(data.results);
+    showToast(`✅ ${data.total} slot terdeteksi — ${data.n_tersedia ?? data.n_empty ?? 0} kosong`, 'ok');
+  } catch (err) {
+    showToast('❌ ' + err.message, 'err');
+  }
+  setLoading(false);
+}
 
-    results.forEach((slot, idx) => {
-        let badge = slot.status === "Empty"
-            ? '<span class="badge-empty">Empty</span>'
-            : '<span class="badge-occupied">Occupied</span>';
+/* ──────────────────────────────────────────────────────────────────────
+   MODE: LIVE CAMERA (dengan pilihan sumber kamera)
+   ────────────────────────────────────────────────────────────────────── */
+el('btnCamera').addEventListener('click', async () => {
+  await populateCameraList();
+  el('cameraSelectWrap').classList.remove('d-none');
+  // Jika user belum pilih kamera, langsung start dengan device pertama
+  if (!camStream) startCameraWithDevice(el('cameraSelect').value);
+});
 
-        // FIX: backend tidak mengirim "slot_id", gunakan index + 1
-        let slotId = slot.slot_id ?? (idx + 1);
+el('cameraSelect').addEventListener('change', () => {
+  startCameraWithDevice(el('cameraSelect').value);
+});
 
-        tableBody.innerHTML += `
-            <tr>
-                <td>${slotId}</td>
-                <td>${badge}</td>
-                <td>${slot.confidence}%</td>
-            </tr>
-        `;
+async function populateCameraList() {
+  try {
+    // Minta izin dulu supaya label device muncul
+    const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    tempStream.getTracks().forEach(t => t.stop());
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+    const sel = el('cameraSelect');
+    sel.innerHTML = '';
+    videoDevices.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Kamera ${i + 1}`;
+      sel.appendChild(opt);
     });
+
+    if (videoDevices.length === 0) {
+      showToast('❌ Tidak ada kamera ditemukan', 'err');
+    }
+  } catch (err) {
+    showToast('❌ Izin kamera ditolak: ' + err.message, 'err');
+  }
 }
 
-//==============================
-// Update Preview
-// FIX: backend mengirim field "image", bukan "image_b64"
-//==============================
+async function startCameraWithDevice(deviceId) {
+  stopCameraStreamOnly();
+  try {
+    const constraints = {
+      video: deviceId ? { deviceId: { exact: deviceId } } : true,
+      audio: false
+    };
+    camStream = await navigator.mediaDevices.getUserMedia(constraints);
 
-function updatePreview(base64String){
-    if (!base64String) {
-        console.warn("Preview kosong — backend tidak mengirim gambar");
-        return;
-    }
-    preview.src = "data:image/jpeg;base64," + base64String;
+    mode = 'camera';
+    el('modeBadge').innerHTML = '<span class="live-dot"></span>Live';
+    el('modeBadge').className = 'badge bg-danger';
+
+    const video = el('liveVideo');
+    video.srcObject = camStream;
+    video.classList.remove('d-none');
+    el('preview').classList.add('d-none');
+
+    video.onloadedmetadata = () => {
+      natW = video.videoWidth;
+      natH = video.videoHeight;
+      setupROICanvas();
+    };
+
+    if (camTimer) clearInterval(camTimer);
+    camTimer = setInterval(detectLiveFrame, camInterval);
+    showToast('📹 Kamera aktif', 'ok');
+  } catch (err) {
+    showToast('❌ Kamera gagal diakses: ' + err.message, 'err');
+  }
 }
 
-//==============================
-// Upload Image
-//==============================
+async function detectLiveFrame() {
+  const video = el('liveVideo');
+  if (!video.videoWidth) return;
 
-btnImage.onclick = () => {
-    imageInput.click();
-};
+  const cap = el('captureCanvas');
+  cap.width = video.videoWidth;
+  cap.height = video.videoHeight;
+  cap.getContext('2d').drawImage(video, 0, 0);
 
-imageInput.onchange = () => {
-    let file = imageInput.files[0];
-    if (!file) return;
+  const frameB64 = cap.toDataURL('image/jpeg', 0.8);
 
-    let formData = new FormData();
-    formData.append("image", file);
-
-    showLoading();
-
-    fetch("/detect/image", {
-        method: "POST",
-        body: formData
-    })
-    .then(res => res.json())
-    .then(data => {
-        hideLoading();
-
-        if (!data.success) {
-            alert(data.message || "Deteksi gagal");
-            return;
-        }
-
-        // FIX: pakai data.image (sesuai key yang dikirim Flask)
-        updatePreview(data.image);
-        updateStatistic(data);
-        updateTable(data.results);
-    })
-    .catch(err => {
-        hideLoading();
-        alert("Detection Failed");
-        console.log(err);
+  try {
+    const res = await fetch('/detect/frame', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frame: frameB64, roi: roiList.length ? roiList : null })
     });
-};
+    const data = await res.json();
+    if (!data.success) return;
 
-//==============================
-// Upload Video
-//==============================
+    // Tampilkan hasil sebagai overlay pada elemen preview (image) di atas video
+    el('preview').src = 'data:image/jpeg;base64,' + data.image_b64;
+    el('preview').classList.remove('d-none');
+    video.classList.add('d-none'); // tampilkan hasil overlay, bukan video mentah
 
-btnVideo.onclick = () => {
-    videoInput.click();
-};
+    updateStats(data);
+    updateTable(data.results);
 
-videoInput.onchange = () => {
-    let file = videoInput.files[0];
-    if (!file) return;
+    // FPS counter sederhana
+    const now = performance.now();
+    const fps = Math.round(1000 / (now - lastFrameTime) * (camInterval / 1000));
+    lastFrameTime = now;
+    el('fps').textContent = Math.min(fps, 30);
+  } catch (err) {
+    /* silent fail agar live tidak spam toast */
+  }
+}
 
-    let formData = new FormData();
-    formData.append("video", file);
+function stopCameraStreamOnly() {
+  if (camStream) {
+    camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+  }
+  if (camTimer) {
+    clearInterval(camTimer);
+    camTimer = null;
+  }
+}
 
-    showLoading();
+function stopCamera() {
+  stopCameraStreamOnly();
+  el('cameraSelectWrap').classList.add('d-none');
+  el('liveVideo').classList.add('d-none');
+}
 
-    fetch("/detect/video", {
-        method: "POST",
-        body: formData
-    })
-    .then(res => res.json())
-    .then(data => {
-        hideLoading();
+/* ──────────────────────────────────────────────────────────────────────
+   STOP DETECTION
+   ────────────────────────────────────────────────────────────────────── */
+el('btnStop').addEventListener('click', () => {
+  stopCamera();
+  mode = 'idle';
+  el('modeBadge').textContent = 'Idle';
+  el('modeBadge').className = 'badge bg-secondary';
+  el('preview').src = 'https://placehold.co/900x520/1e293b/ffffff?text=Waiting+for+Detection';
+  el('preview').classList.remove('d-none');
+  el('roiCanvas').classList.add('d-none');
+  resetStats();
+  showToast('Deteksi dihentikan', '');
+});
 
-        if (!data.success) {
-            alert(data.message || "Deteksi gagal");
-            return;
-        }
+/* ──────────────────────────────────────────────────────────────────────
+   ROI MANUAL (Bounding Box buatan user)
+   ────────────────────────────────────────────────────────────────────── */
+el('btnROIMode').addEventListener('click', () => {
+  roiActive = !roiActive;
+  el('btnROIMode').classList.toggle('active', roiActive);
+  el('roiCanvas').classList.toggle('d-none', !roiActive);
+  if (roiActive) setupROICanvas();
+});
 
-        updatePreview(data.image);
-        updateStatistic(data);
-        updateTable(data.results);
-    })
-    .catch(err => {
-        hideLoading();
-        console.log(err);
-        alert("Video Error");
-    });
-};
+el('btnROIReset').addEventListener('click', () => {
+  roiList = [];
+  drawROIOverlay();
+  showToast('ROI manual direset — kembali ke mode otomatis', 'ok');
+});
 
-//==============================
-// Live Camera
-//==============================
+function setupROICanvas() {
+  const activeEl = mode === 'camera' && !el('liveVideo').classList.contains('d-none')
+    ? el('liveVideo')
+    : el('preview');
 
-btnCamera.onclick = async () => {
-    if (cameraRunning) return;
-    cameraRunning = true;
+  if (activeEl.classList.contains('d-none') || !natW) return;
 
-    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  const rect = activeEl.getBoundingClientRect();
+  const wrapRect = el('previewWrap').getBoundingClientRect();
 
-    const video = document.createElement("video");
-    video.srcObject = stream;
-    await video.play();
+  dispW = rect.width;
+  dispH = rect.height;
 
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
+  const canvas = el('roiCanvas');
+  canvas.width  = dispW;
+  canvas.height = dispH;
+  canvas.style.width  = dispW + 'px';
+  canvas.style.height = dispH + 'px';
+  canvas.style.left = (rect.left - wrapRect.left) + 'px';
+  canvas.style.top  = (rect.top - wrapRect.top) + 'px';
 
-    async function detect(){
-        if (!cameraRunning) return;
+  if (roiActive) canvas.classList.remove('d-none');
+  drawROIOverlay();
+}
 
-        canvas.width  = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0);
+function getCanvasPos(e) {
+  const rect = el('roiCanvas').getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  return { x: clientX - rect.left, y: clientY - rect.top };
+}
 
-        let frame = canvas.toDataURL("image/jpeg");
-        let start = performance.now();
+function startROIDraw(e) {
+  if (!roiActive) return;
+  roiDrawing = true;
+  roiStart = getCanvasPos(e);
+}
 
-        fetch("/detect/frame", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ frame: frame })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (!data.success) return;
+function moveROIDraw(e) {
+  if (!roiDrawing || !roiActive) return;
+  const cur = getCanvasPos(e);
+  const ctx = el('roiCanvas').getContext('2d');
+  ctx.clearRect(0, 0, dispW, dispH);
+  drawExistingROI(ctx);
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 3]);
+  ctx.strokeRect(roiStart.x, roiStart.y, cur.x - roiStart.x, cur.y - roiStart.y);
+}
 
-            updatePreview(data.image);
-            updateStatistic(data);
-            updateTable(data.results);
+function endROIDraw(e) {
+  if (!roiDrawing || !roiActive) return;
+  roiDrawing = false;
+  const cur = getCanvasPos(e);
+  const rx = Math.min(roiStart.x, cur.x);
+  const ry = Math.min(roiStart.y, cur.y);
+  const rw = Math.abs(cur.x - roiStart.x);
+  const rh = Math.abs(cur.y - roiStart.y);
+  if (rw < 8 || rh < 8) return;
 
-            let end = performance.now();
-            fpsText.innerHTML = Math.round(1000 / (end - start));
+  const scaleX = natW / dispW;
+  const scaleY = natH / dispH;
+  roiList.push([
+    Math.round(rx * scaleX),
+    Math.round(ry * scaleY),
+    Math.round(rw * scaleX),
+    Math.round(rh * scaleY)
+  ]);
+  drawROIOverlay();
+}
 
-            if (cameraRunning) {
-                requestAnimationFrame(detect);
-            }
-        })
-        .catch(err => console.log(err));
-    }
+function drawROIOverlay() {
+  const canvas = el('roiCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawExistingROI(ctx);
+}
 
-    detect();
-};
+function drawExistingROI(ctx) {
+  ctx.setLineDash([]);
+  roiList.forEach(([x, y, w, h], i) => {
+    if (!natW || !natH) return;
+    const scaleX = dispW / natW;
+    const scaleY = dispH / natH;
+    const dx = x * scaleX, dy = y * scaleY, dw = w * scaleX, dh = h * scaleY;
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(dx, dy, dw, dh);
+    ctx.fillStyle = 'rgba(245,158,11,.15)';
+    ctx.fillRect(dx, dy, dw, dh);
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(`S${i + 1}`, dx + 4, dy + 14);
+  });
+}
 
-//==============================
-// Stop Camera
-//==============================
+const roiCanvas = el('roiCanvas');
+roiCanvas.addEventListener('mousedown', startROIDraw);
+roiCanvas.addEventListener('mousemove', moveROIDraw);
+roiCanvas.addEventListener('mouseup', endROIDraw);
+roiCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); startROIDraw(e); }, { passive: false });
+roiCanvas.addEventListener('touchmove',  (e) => { e.preventDefault(); moveROIDraw(e); },  { passive: false });
+roiCanvas.addEventListener('touchend',   (e) => { endROIDraw(e); });
 
-btnStop.onclick = () => {
-    cameraRunning = false;
-    if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-    }
-    preview.src = "https://placehold.co/900x520/1e293b/ffffff?text=Detection+Stopped";
-};
+window.addEventListener('resize', setupROICanvas);
 
-//==============================
-// Initial
-//==============================
+/* ──────────────────────────────────────────────────────────────────────
+   STATS & TABLE
+   ────────────────────────────────────────────────────────────────────── */
+function updateStats(data) {
+  const total = data.total ?? 0;
+  const empty = data.n_tersedia ?? data.n_empty ?? 0;
+  const occupied = data.n_penuh ?? data.n_occupied ?? (total - empty);
 
-totalSlot.innerHTML = 0;
-emptySlot.innerHTML = 0;
-occupiedSlot.innerHTML = 0;
-fpsText.innerHTML = 0;
+  el('totalSlot').textContent = total;
+  el('emptySlot').textContent = empty;
+  el('occupiedSlot').textContent = occupied;
+}
+
+function resetStats() {
+  el('totalSlot').textContent = 0;
+  el('emptySlot').textContent = 0;
+  el('occupiedSlot').textContent = 0;
+  el('fps').textContent = 0;
+  el('resultTable').innerHTML = '<tr><td colspan="3" class="text-center text-muted">No Detection</td></tr>';
+}
+
+function updateTable(results) {
+  if (!results || results.length === 0) {
+    el('resultTable').innerHTML = '<tr><td colspan="3" class="text-center text-muted">No Detection</td></tr>';
+    return;
+  }
+  el('resultTable').innerHTML = results.map(r => {
+    const isEmpty = (r.status === 'Tersedia' || r.status === 'Empty');
+    const badgeClass = isEmpty ? 'bg-success' : 'bg-danger';
+    const statusLabel = isEmpty ? 'Empty' : 'Occupied';
+    return `
+      <tr>
+        <td>Slot ${r.slot_id}</td>
+        <td><span class="badge ${badgeClass}">${statusLabel}</span></td>
+        <td>${r.confidence}%</td>
+      </tr>`;
+  }).join('');
+}
