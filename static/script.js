@@ -1,5 +1,5 @@
 
-
+let currentImageFile = null;
 let mode = 'idle';            // 'idle' | 'image' | 'camera'
 let selectedFile = null;
 let camStream = null;
@@ -13,7 +13,8 @@ let roiDrawing = false;
 let roiStart  = null;
 let natW = 0, natH = 0;       // ukuran asli gambar/video
 let dispW = 0, dispH = 0;     // ukuran tampil di layar
-
+let file=imageInput.files[0];
+currentImageFile=file;
 const el = (id) => document.getElementById(id);
 
 /* ── Toast Helper ─────────────────────────────────────────────────────── */
